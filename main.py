@@ -134,91 +134,60 @@ def getGameInfo(directory_path):
 
 
 def tabeliseResults(results: Dict[str, SetResult]):
+    data = []
     total_game = {}
     for game_name, result in results.items():
-        print(game_name)
+        data.append([game_name])
         for set_number, set in result.sets.items():
-            print(f"Satz: {set_number}. Ergebnis: {set.home_points}:{set.away_points}. Gespielte Punkte: {set.getPointsPlayed()}")
-            print("Nummer; PlusMinus; Gespielte Punkte; Anteil am Satz Gespielt")
+            data.append([f"Satz: {set_number}. Ergebnis: {set.home_points}:{set.away_points}. Gespielte Punkte: {set.getPointsPlayed()}"])
+            data.append(["Nummer"," PlusMinus", "Gespielte Punkte", "Anteil am Satz"])
             for key, player in set.players.items():
-                print(f"{player.number}: {player.getPlusMinus()}; {player.getPointsPlayed()}; {(player.getPointsPlayed()/set.getPointsPlayed())*100:.0f}%")
+                data.append([f"{player.number}", f"{player.getPlusMinus()}",f"{player.getPointsPlayed()}", f"{(player.getPointsPlayed()/set.getPointsPlayed())*100:.0f}%"])
                 if player.number not in total_game:
                     total_game[player.number] = [player.getPlusMinus(), player.getPointsPlayed()]
                 else:
                     total_game[player.number][0] += player.getPlusMinus()
                     total_game[player.number][1] += player.getPointsPlayed()
-        print(f"Ganzes Spiel. Gespielte Punkte: {result.getPointsPlayed()}")
+        data.append([f"Ganzes Spiel. Gespielte Punkte: {result.getPointsPlayed()}"])
+        data.append(["Nummer"," PlusMinus", "Gespielte Punkte", "Anteil am Spiel"])
         for number, stat in total_game.items():
-            print(f"{number}; {stat[0]}; {stat[1]}; {(stat[1]/result.getPointsPlayed())*100:.0f}%")
+            data.append([f"{number}", f"{stat[0]}", f"{stat[1]}", f"{(stat[1]/result.getPointsPlayed())*100:.0f}%"])
+    return data
             
 
-    
+def makePdf(data):
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+
+    # Create a PDF
+    pdf_filename = f"results/{data[0][0]}.pdf"
+    document = SimpleDocTemplate(pdf_filename, pagesize=letter)
+    table = Table(data)
+
+    # Add style to the table
+    style = TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), '#77AABB'),
+        ('TEXTCOLOR', (0, 0), (-1, 0), (1, 1, 1, 1)),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), '#DDDDDD'),
+        ('GRID', (0, 0), (-1, -1), 1, '#000000'),
+    ])
+
+    table.setStyle(style)
+
+    # Build the PDF
+    document.build([table])
 
 
 
 def main():
     results = getGameInfo("23_24")
 
-    tabeliseResults(results)
+    data = tabeliseResults(results)
+    makePdf(data)
 
 
 if __name__ == "__main__":
     main()
-
-'''To create a PDF with good-looking tables from your data in Python, you can use the `reportlab` library. The following example assumes that you have the `reportlab` library installed. If you don't have it installed, you can install it using:
-
-```bash
-pip install reportlab
-```
-
-Here's a simple script to create a PDF with tables from your data:
-
-```python
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
-
-# Your data
-data = [
-    ["Satz: 1. Ergebnis: 26:28. Gespielte Punkte: 54"],
-    ["Nummer", "PlusMinus", "Gespielte Punkte", "Anteil am Satz Gespielt"],
-    ["1", "-2", "54", "100%"],
-    ["4", "-2", "54", "100%"],
-    ["9", "-2", "54", "100%"],
-    ["12", "-2", "54", "100%"],
-    ["11", "-2", "54", "100%"],
-    ["5", "-2", "54", "100%"],
-    ["Satz: 2. Ergebnis: 16:25. Gespielte Punkte: 41"],
-    ["Nummer", "PlusMinus", "Gespielte Punkte", "Anteil am Satz Gespielt"],
-    ["5", "-6", "18", "44%"],
-    ["15", "-3", "23", "56%"],
-    ["1", "-4", "28", "68%"],
-    ["7", "-5", "13", "32%"],
-    ["4", "-9", "41", "100%"],
-    ["9", "-9", "41", "100%"],
-    ["12", "-9", "41", "100%"],
-    ["11", "-9", "41", "100%"],
-]
-
-# Create a PDF
-pdf_filename = "output.pdf"
-document = SimpleDocTemplate(pdf_filename, pagesize=letter)
-table = Table(data)
-
-# Add style to the table
-style = TableStyle([
-    ('BACKGROUND', (0, 0), (-1, 0), '#77AABB'),
-    ('TEXTCOLOR', (0, 0), (-1, 0), (1, 1, 1, 1)),
-    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-    ('BACKGROUND', (0, 1), (-1, -1), '#DDDDDD'),
-    ('GRID', (0, 0), (-1, -1), 1, '#000000'),
-])
-
-table.setStyle(style)
-
-# Build the PDF
-document.build([table])
-```
-
-This script uses the `reportlab` library to create a PDF document with a table. Adjust the styles, colors, and other formatting options according to your preferences. The provided styles are just an example, and you can modify them to suit your needs.'''
