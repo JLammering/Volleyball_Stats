@@ -7,6 +7,9 @@ from typing import Dict
 
 import pandas as pd
 
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+
 # Configure the logging settings
 logging.basicConfig(level=logging.INFO)  # Set the logging level (e.g., INFO, DEBUG)
 
@@ -34,22 +37,26 @@ class SetResult:
         return self.home_points + self.away_points
     
 
-    def addPlayer(self, number: int, exchange, change, change_back):
+    def addPlayer(self, number: int, exchange, change, change_back, is_home: bool):
+        end_result = f"{self.home_points}:{self.away_points}" if is_home else f"{self.away_points}:{self.home_points}"
+
         if isinstance(change_back, str):
-            self.players[number] = Player(number, "0:0", change, change_back, f"{self.home_points}:{self.away_points}")
+            self.players[number] = Player(number, "0:0", change, change_back, end_result)
             self.players[exchange] = Player(exchange, change, change_back)
         elif isinstance(change, str):
             self.players[number] = Player(number, "0:0", change)
-            self.players[exchange] = Player(exchange, change, f"{self.home_points}:{self.away_points}")
+            self.players[exchange] = Player(exchange, change, end_result)
         else:#starting player plays till end
-            self.players[number] = Player(number, "0:0", f"{self.home_points}:{self.away_points}")
+            self.players[number] = Player(number, "0:0", end_result)
 
 
 class GameResult:
-    def __init__(self, sets: Dict[int, SetResult], home_name: str, away_name: str):
+    def __init__(self, sets: Dict[int, SetResult], home_name: str, away_name: str, season: str, team: str):
         self.sets = sets
         self.home_team_name = home_name
         self.away_team_name = away_name
+        self.season = season
+        self.team = team
     
     def getPointsPlayed(self):
         result = 0
@@ -57,15 +64,23 @@ class GameResult:
             result += set.getPointsPlayed()
         return result
             
-
+def listToScore(list):
+    return f"{list[0]}:{list[1]}"
 
 class Player:
-    def __init__(self, number: int, start_score: str, end_score: str, second_start_score: str=None, second_end_score: str=None) -> None:
+    def __init__(self, number: int, start_score: str, end_score: str, second_start_score: str=None, second_end_score: str=None, ) -> None:
         self.number = int(number)
         self.start_score = start_score.split(':')
         self.end_score = end_score.split(':')
         self.second_start_score = second_start_score.split(':') if second_start_score != None else None
         self.second_end_score = second_end_score.split(':') if second_end_score != None else None
+
+
+    def getPlayedScores(self):
+        result = f"{listToScore(self.start_score)}-{listToScore(self.end_score)}"
+        if self.second_start_score != None:
+            result += f" & {listToScore(self.second_start_score)}-{listToScore(self.second_end_score)}"
+        return result
 
 
     def getPlusMinus(self):
@@ -86,7 +101,9 @@ class Player:
         return own_points + other_points
 
 
-def getGameInfo(directory_path):
+def getGameInfo(directory_path, team_to_look_for):
+
+    path_parts = directory_path.split('/')
 
     # List all files in the directory
     files = os.listdir(directory_path)
@@ -109,6 +126,7 @@ def getGameInfo(directory_path):
 
         # Extract team names
         home_team = teams[0]
+        is_home = home_team == team_to_look_for
         away_team = teams[1]
         df_game = pd.read_csv(f"{directory_path}/{game_file}", delimiter=';', skipinitialspace=True)
         df_players = pd.read_csv(f"{directory_path}/{player_files[i]}", delimiter=';', skipinitialspace=True)
@@ -126,23 +144,24 @@ def getGameInfo(directory_path):
             exchange = row['Player New']
             change = row['Change']
             change_back = row['Change Back']
-            sets[set].addPlayer(number, exchange, change, change_back)
+            sets[set].addPlayer(number, exchange, change, change_back, is_home)
 
-        results[f"{home_team}-{away_team}"] = GameResult(sets, home_team, away_team)
+        results[f"{home_team}-{away_team}"] = GameResult(sets, home_team, away_team, path_parts[1], path_parts[2])
 
     return results
 
 
 def tabeliseResults(results: Dict[str, SetResult]):
-    data = []
-    total_game = {}
+    datas = []
     for game_name, result in results.items():
-        data.append([game_name])
+        data = []
+        total_game = {}
+        data.append([game_name, result.season.replace('_', '/'), result.team])
         for set_number, set in result.sets.items():
             data.append([f"Satz: {set_number}. Ergebnis: {set.home_points}:{set.away_points}. Gespielte Punkte: {set.getPointsPlayed()}"])
-            data.append(["Nummer"," PlusMinus", "Gespielte Punkte", "Anteil am Satz"])
+            data.append(["Nummer"," PlusMinus", "Gespielte Punkte", "Anteil am Satz", "Ein-/Auswechslung"])
             for key, player in set.players.items():
-                data.append([f"{player.number}", f"{player.getPlusMinus()}",f"{player.getPointsPlayed()}", f"{(player.getPointsPlayed()/set.getPointsPlayed())*100:.0f}%"])
+                data.append([f"{player.number}", f"{player.getPlusMinus()}",f"{player.getPointsPlayed()}", f"{(player.getPointsPlayed()/set.getPointsPlayed())*100:.0f}%", f"{player.getPlayedScores()}"])
                 if player.number not in total_game:
                     total_game[player.number] = [player.getPlusMinus(), player.getPointsPlayed()]
                 else:
@@ -152,15 +171,15 @@ def tabeliseResults(results: Dict[str, SetResult]):
         data.append(["Nummer"," PlusMinus", "Gespielte Punkte", "Anteil am Spiel"])
         for number, stat in total_game.items():
             data.append([f"{number}", f"{stat[0]}", f"{stat[1]}", f"{(stat[1]/result.getPointsPlayed())*100:.0f}%"])
-    return data
+        datas.append(data)
+    return datas
             
 
-def makePdf(data):
-    from reportlab.lib.pagesizes import letter
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+def makePdf(data, output_path):
 
+    createPathIfNotExists(output_path)
     # Create a PDF
-    pdf_filename = f"results/{data[0][0]}.pdf"
+    pdf_filename = f"{output_path}/{data[0][0]}.pdf"
     document = SimpleDocTemplate(pdf_filename, pagesize=letter)
     table = Table(data)
 
@@ -181,12 +200,31 @@ def makePdf(data):
     document.build([table])
 
 
+def getDirsInDir(directory_path):
+    # Get the list of all items in the directory
+    all_items = os.listdir(directory_path)
+
+    # Filter out only directories
+    directories = [item for item in all_items if os.path.isdir(os.path.join(directory_path, item))]
+
+    return directories
+
+
+def createPathIfNotExists(directory_path):
+    if not os.path.exists(directory_path):
+            # Create the directory if it doesn't exist
+            os.makedirs(directory_path)
+
 
 def main():
-    results = getGameInfo("23_24")
 
-    data = tabeliseResults(results)
-    makePdf(data)
+    for season in getDirsInDir("data"):
+        for team in getDirsInDir(f"data/{season}"):
+            results = getGameInfo(f"data/{season}/{team}", "TSC")
+
+            datas = tabeliseResults(results)
+            for data in datas:
+                makePdf(data, f"results/{season}/{team}")
 
 
 if __name__ == "__main__":
