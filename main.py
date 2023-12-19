@@ -1,3 +1,4 @@
+import csv
 import math
 import os
 import re
@@ -18,7 +19,6 @@ logger = logging.getLogger("Volleyball_stats")
 
 class SetResult:
     def __init__(self, set: int, home_points: int, away_points: int):
-        logger.info(f"Set Result {set} {home_points}:{away_points}")
         if set < 1 or set > 5:
             raise ValueError("Set has to be between 1 and 5")
         self.set = set
@@ -37,17 +37,17 @@ class SetResult:
         return self.home_points + self.away_points
     
 
-    def addPlayer(self, number: int, exchange, change, change_back, is_home: bool):
+    def addPlayer(self, number: int, exchange, change, change_back, is_home: bool, names):
         end_result = f"{self.home_points}:{self.away_points}" if is_home else f"{self.away_points}:{self.home_points}"
 
         if isinstance(change_back, str):
-            self.players[number] = Player(number, "0:0", change, change_back, end_result)
-            self.players[exchange] = Player(exchange, change, change_back)
+            self.players[number] = Player(number, names[number], "0:0", change, change_back, end_result)
+            self.players[exchange] = Player(exchange, names[exchange], change, change_back)
         elif isinstance(change, str):
-            self.players[number] = Player(number, "0:0", change)
-            self.players[exchange] = Player(exchange, change, end_result)
+            self.players[number] = Player(number, names[number], "0:0", change)
+            self.players[exchange] = Player(exchange, names[exchange], change, end_result)
         else:#starting player plays till end
-            self.players[number] = Player(number, "0:0", end_result)
+            self.players[number] = Player(number, names[number], "0:0", end_result)
 
 
 class GameResult:
@@ -68,8 +68,9 @@ def listToScore(list):
     return f"{list[0]}:{list[1]}"
 
 class Player:
-    def __init__(self, number: int, start_score: str, end_score: str, second_start_score: str=None, second_end_score: str=None, ) -> None:
+    def __init__(self, number: int, name:str, start_score: str, end_score: str, second_start_score: str=None, second_end_score: str=None, ) -> None:
         self.number = int(number)
+        self.name = name
         self.start_score = start_score.split(':')
         self.end_score = end_score.split(':')
         self.second_start_score = second_start_score.split(':') if second_start_score != None else None
@@ -111,12 +112,18 @@ def getGameInfo(directory_path, team_to_look_for):
     # Specify the pattern for the files you're interested in
     game_pattern = '.*-game.csv'
     player_pattern = '.*-players.csv'
+    name_pattern = '.*-names.csv'
 
     # Filter files based on the pattern
     game_files = [file for file in files if re.match(game_pattern, file)]
     player_files = [file for file in files if re.match(player_pattern, file)]
+    name_files = [file for file in files if re.match(name_pattern, file)]
     game_files.sort()
     player_files.sort()
+    name_files = files_to_dict(name_files)#not always a file
+
+    #read in normal names
+    names_dict_normally = read_csv_to_dict(f"{directory_path}/player-names-normally.csv")
 
     results = {}
 
@@ -128,9 +135,19 @@ def getGameInfo(directory_path, team_to_look_for):
         home_team = teams[0]
         is_home = home_team == team_to_look_for
         away_team = teams[1]
+        game_name = f"{home_team}-{away_team}"
+        logger.info(f"processing {game_name}")
+
+        #read files
         df_game = pd.read_csv(f"{directory_path}/{game_file}", delimiter=';', skipinitialspace=True)
         df_players = pd.read_csv(f"{directory_path}/{player_files[i]}", delimiter=';', skipinitialspace=True)
 
+        #get names
+        game_names = read_csv_to_dict(f"{directory_path}/{name_files[game_name]}") if game_name in name_files else {}
+        names_dict = names_dict_normally.copy()
+        names_dict.update(game_names)
+
+        #construct setresults
         sets: Dict[int, SetResult] = {}
         for index, row in df_game.iterrows():
             # Access individual columns using column names
@@ -144,9 +161,9 @@ def getGameInfo(directory_path, team_to_look_for):
             exchange = row['Player New']
             change = row['Change']
             change_back = row['Change Back']
-            sets[set].addPlayer(number, exchange, change, change_back, is_home)
+            sets[set].addPlayer(number, exchange, change, change_back, is_home, names_dict)
 
-        results[f"{home_team}-{away_team}"] = GameResult(sets, home_team, away_team, path_parts[1], path_parts[2])
+        results[game_name] = GameResult(sets, home_team, away_team, path_parts[1], path_parts[2])
 
     return results
 
@@ -159,18 +176,18 @@ def tabeliseResults(results: Dict[str, SetResult]):
         data.append([game_name, result.season.replace('_', '/'), result.team])
         for set_number, set in result.sets.items():
             data.append([f"Satz: {set_number}. Ergebnis: {set.home_points}:{set.away_points}. Gespielte Punkte: {set.getPointsPlayed()}"])
-            data.append(["Nummer"," PlusMinus", "Gespielte Punkte", "Anteil am Satz", "Ein-/Auswechslung"])
+            data.append(["Spieler:in"," PlusMinus", "Gespielte Punkte", "Anteil am Satz", "Ein-/Auswechslung"])
             for key, player in set.players.items():
-                data.append([f"{player.number}", f"{player.getPlusMinus()}",f"{player.getPointsPlayed()}", f"{(player.getPointsPlayed()/set.getPointsPlayed())*100:.0f}%", f"{player.getPlayedScores()}"])
+                data.append([f"{player.name}", f"{player.getPlusMinus()}",f"{player.getPointsPlayed()}", f"{(player.getPointsPlayed()/set.getPointsPlayed())*100:.0f}%", f"{player.getPlayedScores()}"])
                 if player.number not in total_game:
-                    total_game[player.number] = [player.getPlusMinus(), player.getPointsPlayed()]
+                    total_game[player.number] = [player.name, player.getPlusMinus(), player.getPointsPlayed()]
                 else:
-                    total_game[player.number][0] += player.getPlusMinus()
-                    total_game[player.number][1] += player.getPointsPlayed()
+                    total_game[player.number][1] += player.getPlusMinus()
+                    total_game[player.number][2] += player.getPointsPlayed()
         data.append([f"Ganzes Spiel. Gespielte Punkte: {result.getPointsPlayed()}"])
-        data.append(["Nummer"," PlusMinus", "Gespielte Punkte", "Anteil am Spiel"])
+        data.append(["Spieler:in"," PlusMinus", "Gespielte Punkte", "Anteil am Spiel"])
         for number, stat in total_game.items():
-            data.append([f"{number}", f"{stat[0]}", f"{stat[1]}", f"{(stat[1]/result.getPointsPlayed())*100:.0f}%"])
+            data.append([f"{stat[0]}", f"{stat[1]}", f"{stat[2]}", f"{(stat[2]/result.getPointsPlayed())*100:.0f}%"])
         datas.append(data)
     return datas
             
@@ -198,6 +215,7 @@ def makePdf(data, output_path):
 
     # Build the PDF
     document.build([table])
+    logger.info(f"{pdf_filename} created")
 
 
 def getDirsInDir(directory_path):
@@ -208,6 +226,41 @@ def getDirsInDir(directory_path):
     directories = [item for item in all_items if os.path.isdir(os.path.join(directory_path, item))]
 
     return directories
+
+
+def files_to_dict(file_list):
+    result_dict = {}
+    
+    for file_name in file_list:
+        # Extract the key from the file name
+        file_parts = file_name.split('-')
+        key = f"{file_parts[0]}-{file_parts[1]}"
+        # Add the key-value pair to the dictionary
+        result_dict[key] = file_name
+    
+    return result_dict
+
+
+def read_csv_to_dict(file_path):
+    result_dict = {}
+    
+    with open(file_path, 'r') as file:
+        # Create a CSV reader object
+        csv_reader = csv.reader(file, delimiter=';')
+        
+        # Read the header
+        header = next(csv_reader)
+        
+        # Check if there are two columns in the header
+        if len(header) == 2:
+            # Iterate through the rows and create a dictionary
+            for row in csv_reader:
+                key, value = row
+                result_dict[int(key)] = value
+        else:
+            raise SyntaxError("header of name file doesnt have two cloumns")
+                
+    return result_dict
 
 
 def createPathIfNotExists(directory_path):
