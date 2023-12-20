@@ -9,7 +9,9 @@ from typing import Dict
 import pandas as pd
 
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
+from reportlab.lib.styles import getSampleStyleSheet
+
 
 # Configure the logging settings
 logging.basicConfig(level=logging.INFO)  # Set the logging level (e.g., INFO, DEBUG)
@@ -57,34 +59,68 @@ class GameResult:
         self.away_team_name = away_name
         self.season = season
         self.team = team
+        self.game_players = self.__getGamePlayers()
+
+    def __getGamePlayers(self):
+        game_players = {}
+        for set_no, set in self.sets.items():
+            for number, player in set.players.items():
+                if number not in game_players:
+                    game_players[number] = Player(player.number, player.name, plus_minus=player.plus_minus, points_played=player.points_played)
+                else:
+                    game_players[number].points_played += player.points_played
+                    game_players[number].plus_minus += player.plus_minus
+        return game_players
     
     def getPointsPlayed(self):
         result = 0
         for key, set in self.sets.items():
             result += set.getPointsPlayed()
         return result
+
             
 def listToScore(list):
     return f"{list[0]}:{list[1]}"
 
+
+def getPlayerWording(team_name):
+    if "Herren" in team_name:
+        result = "Spieler"
+    elif "Damen" in team_name:
+        result = "Spielerin"
+    else:
+        result = "Spieler:in"
+    return result
+
+
 class Player:
-    def __init__(self, number: int, name:str, start_score: str, end_score: str, second_start_score: str=None, second_end_score: str=None, ) -> None:
+    def __init__(self, number: int, name:str, start_score: str=None, end_score: str=None, second_start_score: str=None, second_end_score: str=None, plus_minus=None, points_played=None) -> None:
         self.number = int(number)
         self.name = name
-        self.start_score = start_score.split(':')
-        self.end_score = end_score.split(':')
+
+        self.start_score = start_score.split(':') if start_score != None else None
+        self.end_score = end_score.split(':') if end_score != None else None
         self.second_start_score = second_start_score.split(':') if second_start_score != None else None
         self.second_end_score = second_end_score.split(':') if second_end_score != None else None
 
 
-    def getPlayedScores(self):
+        self.plus_minus = self.__getPlusMinus() if plus_minus == None else plus_minus
+        self.points_played = self.__getPointsPlayed() if points_played == None else points_played
+
+
+    def getPlayedScoresInSet(self):
         result = f"{listToScore(self.start_score)}-{listToScore(self.end_score)}"
         if self.second_start_score != None:
             result += f" & {listToScore(self.second_start_score)}-{listToScore(self.second_end_score)}"
         return result
+    
+
+    def getPlusMinusPerFiftyPoints(self):
+        per_one = self.plus_minus/self.points_played
+        return round(per_one * 50, 1)
 
 
-    def getPlusMinus(self):
+    def __getPlusMinus(self):
         own_points = int(self.end_score[0]) - int(self.start_score[0])
         other_points = int(self.end_score[1]) - int(self.start_score[1])
         if self.second_start_score != None:
@@ -93,7 +129,7 @@ class Player:
         return own_points - other_points
 
 
-    def getPointsPlayed(self):
+    def __getPointsPlayed(self):
         own_points = int(self.end_score[0]) - int(self.start_score[0])
         other_points = int(self.end_score[1]) - int(self.start_score[1])
         if self.second_start_score != None:
@@ -169,27 +205,48 @@ def getGameInfo(directory_path, team_to_look_for):
 
 
 def tabeliseResults(results: Dict[str, SetResult]):
-    datas = []
+    tables = []
+    table_total_season = []
+    total_season = {'points': 0}
+    player_wording = ""
     for game_name, result in results.items():
-        data = []
+        table = []
         total_game = {}
-        data.append([game_name, result.season.replace('_', '/'), result.team])
+        if len(table_total_season) == 0:
+            table_total_season.append(["Saison", result.season.replace('_', '/'), result.team])
+        player_wording = getPlayerWording(result.team)
+
+        table.append([game_name, result.season.replace('_', '/'), result.team])
         for set_number, set in result.sets.items():
-            data.append([f"Satz: {set_number}. Ergebnis: {set.home_points}:{set.away_points}. Gespielte Punkte: {set.getPointsPlayed()}"])
-            data.append(["Spieler:in"," PlusMinus", "Gespielte Punkte", "Anteil am Satz", "Ein-/Auswechslung"])
+            table.append([f"Satz: {set_number}. Ergebnis: {set.home_points}:{set.away_points}. Gespielte Punkte: {set.getPointsPlayed()}"])
+            table.append([player_wording,"±", "Gespielte Punkte", "±/50", "Anteil am Satz", "Ein-/Auswechslung"])
             for key, player in set.players.items():
-                data.append([f"{player.name}", f"{player.getPlusMinus()}",f"{player.getPointsPlayed()}", f"{(player.getPointsPlayed()/set.getPointsPlayed())*100:.0f}%", f"{player.getPlayedScores()}"])
-                if player.number not in total_game:
-                    total_game[player.number] = [player.name, player.getPlusMinus(), player.getPointsPlayed()]
-                else:
-                    total_game[player.number][1] += player.getPlusMinus()
-                    total_game[player.number][2] += player.getPointsPlayed()
-        data.append([f"Ganzes Spiel. Gespielte Punkte: {result.getPointsPlayed()}"])
-        data.append(["Spieler:in"," PlusMinus", "Gespielte Punkte", "Anteil am Spiel"])
-        for number, stat in total_game.items():
-            data.append([f"{stat[0]}", f"{stat[1]}", f"{stat[2]}", f"{(stat[2]/result.getPointsPlayed())*100:.0f}%"])
-        datas.append(data)
-    return datas
+                table.append([player.name, str(player.plus_minus), str(player.points_played), str(player.getPlusMinusPerFiftyPoints()), f"{(player.points_played/set.getPointsPlayed())*100:.0f}%",  player.getPlayedScoresInSet()])
+        table.append([f"Ganzes Spiel. Gespielte Punkte: {result.getPointsPlayed()}"])
+        table.append([player_wording,"±", "Gespielte Punkte","±/50", "Anteil am Spiel"])
+        for number, player in result.game_players.items():
+            table.append([player.name, str(player.plus_minus), str(player.points_played), str(player.getPlusMinusPerFiftyPoints()), f"{(player.points_played/result.getPointsPlayed())*100:.0f}%"])
+            #prepare total_season data
+            if player.name not in total_season:
+                total_season[player.name] = [player.name, player.plus_minus, player.points_played]
+            else:
+                total_season[player.name][1] += player.plus_minus
+                total_season[player.name][2] += player.points_played
+        total_season["points"] += result.getPointsPlayed()
+        tables.append(table)
+
+    table_total_season.append([f"Ganze Saison. Gespielte Punkte: {total_season['points']}"])
+    table_total_season.append([player_wording, "PlusMinus", "Gespielte Punkte", "±/50", "Anteil an Saison"])
+    for name, stat in total_season.items():
+        if name == 'points':
+            continue
+        name = stat[0]
+        plus_minus = stat[1]
+        points_played = stat[2]
+        plus_minus_per_fifty = round((plus_minus/points_played)*50, 1)
+        table_total_season.append([name, str(plus_minus), str(points_played), str(plus_minus_per_fifty), f"{(points_played/total_season['points'])*100:.0f}%"])
+    tables.append(table_total_season)
+    return tables
             
 
 def makePdf(data, output_path):
@@ -212,9 +269,11 @@ def makePdf(data, output_path):
     ])
 
     table.setStyle(style)
+    explanation = "±: Eigene Punkte minus Punkte des Gegners, ±/50: Eigene Punkte minus Punkte des Gegners umgerechnet auf 50 gespielte Punkte"
+    paragraph = Paragraph(explanation, getSampleStyleSheet()['Normal'])
 
     # Build the PDF
-    document.build([table])
+    document.build([table, paragraph])
     logger.info(f"{pdf_filename} created")
 
 
@@ -282,3 +341,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+    #TODO:
+    # align names to left
