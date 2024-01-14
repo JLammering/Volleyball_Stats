@@ -236,7 +236,7 @@ def tabeliseResults(results: Dict[str, SetResult]):
         tables.append(table)
 
     table_total_season.append([f"Ganze Saison. Gespielte Punkte: {total_season['points']}"])
-    table_total_season.append([player_wording, "PlusMinus", "Gespielte Punkte", "±/50", "Anteil an Saison"])
+    table_total_season.append([player_wording, "±", "Gespielte Punkte", "±/50", "Anteil an Saison"])
     for name, stat in total_season.items():
         if name == 'points':
             continue
