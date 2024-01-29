@@ -50,10 +50,19 @@ class SetResult:
             self.players[exchange] = Player(exchange, names[exchange], change, end_result)
         else:#starting player plays till end
             self.players[number] = Player(number, names[number], "0:0", end_result)
+     
 
+    def plausibility_check(self):
+        sum_points_played = 0
+        for key, player in self.players.items():
+            sum_points_played += player.getPointsPlayed()
+        if sum_points_played != 6* self.getPointsPlayed(): 
+            raise Exception(f"you maybe missed a player in set {self.set}")
 
 class GameResult:
     def __init__(self, sets: Dict[int, SetResult], home_name: str, away_name: str, season: str, team: str):
+        for set, set_result in sets.items():
+            set_result.plausibility_check()
         self.sets = sets
         self.home_team_name = home_name
         self.away_team_name = away_name
@@ -105,7 +114,7 @@ class Player:
 
 
         self.plus_minus = self.__getPlusMinus() if plus_minus == None else plus_minus
-        self.points_played = self.__getPointsPlayed() if points_played == None else points_played
+        self.points_played = self.getPointsPlayed() if points_played == None else points_played
 
 
     def getPlayedScoresInSet(self):
@@ -129,7 +138,7 @@ class Player:
         return own_points - other_points
 
 
-    def __getPointsPlayed(self):
+    def getPointsPlayed(self):
         own_points = int(self.end_score[0]) - int(self.start_score[0])
         other_points = int(self.end_score[1]) - int(self.start_score[1])
         if self.second_start_score != None:
@@ -204,7 +213,7 @@ def getGameInfo(directory_path, team_to_look_for):
     return results
 
 
-def tabeliseResults(results: Dict[str, SetResult]):
+def tabeliseResults(results: Dict[str, GameResult]):
     tables = []
     table_total_season = []
     total_season = {'points': 0}
