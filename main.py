@@ -1,8 +1,6 @@
 import csv
-import math
 import os
 import re
-import time
 import logging
 from typing import Dict
 
@@ -33,11 +31,11 @@ class SetResult:
         self.home_points = home_points
         self.away_points = away_points
         self.players = {}
-    
+
 
     def getPointsPlayed(self):
         return self.home_points + self.away_points
-    
+
 
     def addPlayer(self, number: int, exchange, change, change_back, is_home: bool, names):
         end_result = f"{self.home_points}:{self.away_points}" if is_home else f"{self.away_points}:{self.home_points}"
@@ -50,13 +48,13 @@ class SetResult:
             self.players[exchange] = Player(exchange, names[exchange], change, end_result)
         else:#starting player plays till end
             self.players[number] = Player(number, names[number], "0:0", end_result)
-     
+
 
     def plausibility_check(self):
         sum_points_played = 0
         for key, player in self.players.items():
             sum_points_played += player.getPointsPlayed()
-        if sum_points_played != 6* self.getPointsPlayed(): 
+        if sum_points_played != 6* self.getPointsPlayed():
             raise Exception(f"you maybe missed a player in set {self.set}")
 
 class GameResult:
@@ -80,14 +78,14 @@ class GameResult:
                     game_players[number].points_played += player.points_played
                     game_players[number].plus_minus += player.plus_minus
         return game_players
-    
+
     def getPointsPlayed(self):
         result = 0
         for key, set in self.sets.items():
             result += set.getPointsPlayed()
         return result
 
-            
+
 def listToScore(list):
     return f"{list[0]}:{list[1]}"
 
@@ -122,7 +120,7 @@ class Player:
         if self.second_start_score != None:
             result += f" & {listToScore(self.second_start_score)}-{listToScore(self.second_end_score)}"
         return result
-    
+
 
     def getPlusMinusPerFiftyPoints(self):
         per_one = self.plus_minus/self.points_played
@@ -256,7 +254,7 @@ def tabeliseResults(results: Dict[str, GameResult]):
         table_total_season.append([name, str(plus_minus), str(points_played), str(plus_minus_per_fifty), f"{(points_played/total_season['points'])*100:.0f}%"])
     tables.append(table_total_season)
     return tables
-            
+
 
 def makePdf(data, output_path):
 
@@ -298,27 +296,27 @@ def getDirsInDir(directory_path):
 
 def files_to_dict(file_list):
     result_dict = {}
-    
+
     for file_name in file_list:
         # Extract the key from the file name
         file_parts = file_name.split('-')
         key = f"{file_parts[0]}-{file_parts[1]}"
         # Add the key-value pair to the dictionary
         result_dict[key] = file_name
-    
+
     return result_dict
 
 
 def read_csv_to_dict(file_path):
     result_dict = {}
-    
+
     with open(file_path, 'r') as file:
         # Create a CSV reader object
         csv_reader = csv.reader(file, delimiter=';')
-        
+
         # Read the header
         header = next(csv_reader)
-        
+
         # Check if there are two columns in the header
         if len(header) == 2:
             # Iterate through the rows and create a dictionary
@@ -327,7 +325,7 @@ def read_csv_to_dict(file_path):
                 result_dict[int(key)] = value
         else:
             raise SyntaxError("header of name file doesnt have two cloumns")
-                
+
     return result_dict
 
 

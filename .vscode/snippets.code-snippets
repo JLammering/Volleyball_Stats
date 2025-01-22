@@ -22,5 +22,9 @@
 	"players-header": {
 		"prefix": "players-header",
 		"body": "Set;Player;Player New;Change;Change Back"
+	},
+	"names-header": {
+		"prefix": "names-header",
+		"body": "number;name"
 	}
 }
