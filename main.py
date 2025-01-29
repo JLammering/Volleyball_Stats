@@ -56,6 +56,13 @@ class SetResult:
             sum_points_played += player.getPointsPlayed()
         if sum_points_played != 6* self.getPointsPlayed():
             raise Exception(f"you maybe missed a player in set {self.set}")
+    
+
+    def sort(self):
+        """sort the players after their normed plus minus"""
+        sorted_items = sorted(self.players.items(), key=lambda item: item[1].getPlusMinusPerFiftyPoints(), reverse=True)
+        self.players = dict(sorted_items)
+
 
 class GameResult:
     def __init__(self, sets: Dict[int, SetResult], home_name: str, away_name: str, season: str, team: str):
@@ -84,6 +91,15 @@ class GameResult:
         for key, set in self.sets.items():
             result += set.getPointsPlayed()
         return result
+    
+
+    def sort(self):
+        """sort in all sets and overall after their normed plus minus"""
+        for key, set in self.sets.items():
+            set.sort()
+        sorted_items = sorted(self.game_players.items(), key=lambda item: item[1].getPlusMinusPerFiftyPoints(), reverse=True)
+        self.game_players = dict(sorted_items)
+        
 
 
 def listToScore(list):
@@ -175,9 +191,9 @@ def getGameInfo(directory_path, team_to_look_for):
         teams = game_file.split('-')
 
         # Extract team names
-        home_team = teams[0]
+        home_team: str = teams[0]
         is_home = home_team == team_to_look_for
-        away_team = teams[1]
+        away_team: str = teams[1]
         game_name = f"{home_team}-{away_team}"
         logger.info(f"processing {game_name}")
 
@@ -206,7 +222,10 @@ def getGameInfo(directory_path, team_to_look_for):
             change_back = row['Change Back']
             sets[set].addPlayer(number, exchange, change, change_back, is_home, names_dict)
 
-        results[game_name] = GameResult(sets, home_team, away_team, path_parts[1], path_parts[2])
+        game_result = GameResult(sets, home_team, away_team, path_parts[1], path_parts[2])
+        game_result.sort()
+        results[game_name] = game_result
+
 
     return results
 
@@ -235,23 +254,25 @@ def tabeliseResults(results: Dict[str, GameResult]):
             table.append([player.name, str(player.plus_minus), str(player.points_played), str(player.getPlusMinusPerFiftyPoints()), f"{(player.points_played/result.getPointsPlayed())*100:.0f}%"])
             #prepare total_season data
             if player.name not in total_season:
-                total_season[player.name] = [player.name, player.plus_minus, player.points_played]
+                total_season[player.name] = [player.name, player.plus_minus, player.points_played, result.getPointsPlayed()]
             else:
                 total_season[player.name][1] += player.plus_minus
                 total_season[player.name][2] += player.points_played
+                total_season[player.name][3] += result.getPointsPlayed()# to get the points a player could have played, because he/she was at the game (assuming everyone plays at least a short time)
         total_season["points"] += result.getPointsPlayed()
         tables.append(table)
 
     table_total_season.append([f"Ganze Saison. Gespielte Punkte: {total_season['points']}"])
-    table_total_season.append([player_wording, "±", "Gespielte Punkte", "±/50", "Anteil an Saison"])
+    table_total_season.append([player_wording, "±", "Gespielte Punkte", "±/50", "Anteil an Saison/möglicher Anteil"])
     for name, stat in total_season.items():
         if name == 'points':
             continue
         name = stat[0]
         plus_minus = stat[1]
         points_played = stat[2]
+        possible_points_played = stat[3]
         plus_minus_per_fifty = round((plus_minus/points_played)*50, 1)
-        table_total_season.append([name, str(plus_minus), str(points_played), str(plus_minus_per_fifty), f"{(points_played/total_season['points'])*100:.0f}%"])
+        table_total_season.append([name, str(plus_minus), str(points_played), str(plus_minus_per_fifty), f"{(points_played/total_season['points'])*100:.0f}%/{(points_played/possible_points_played)*100:.0f}%"])
     tables.append(table_total_season)
     return tables
 
@@ -276,7 +297,7 @@ def makePdf(data, output_path):
     ])
 
     table.setStyle(style)
-    explanation = "±: Eigene Punkte minus Punkte des Gegners, ±/50: Eigene Punkte minus Punkte des Gegners umgerechnet auf 50 gespielte Punkte"
+    explanation = "±: Eigene Punkte minus Punkte des Gegners, ±/50: Eigene Punkte minus Punkte des Gegners umgerechnet auf 50 gespielte Punkte, möglicher Anteil: Anteil an gespielten Punkten von den Spielen wo die Person überhaupt da war"
     paragraph = Paragraph(explanation, getSampleStyleSheet()['Normal'])
 
     # Build the PDF
